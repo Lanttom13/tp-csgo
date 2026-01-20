@@ -130,10 +130,6 @@ Résultat : création/remplissage du schéma rel avec PK/FK et tables d’associ
 
 ## 6. Modèle relationnel (schéma rel)
 
-## Schéma relationnel (ERD)
-
-![ERD - schéma relationnel rel](docs/diagrams/erd_rel.png)
-
 ### 6.1 Entités
 
 rel.team(team_id, team_name)
