@@ -1,0 +1,14 @@
+# Secrets
+.env
+
+# Data (Kaggle CSV)
+data/raw/
+data/**/*.csv
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Docker volumes
+pg_data/
