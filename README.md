@@ -130,6 +130,8 @@ Résultat : création/remplissage du schéma rel avec PK/FK et tables d’associ
 
 ## 6. Modèle relationnel (schéma rel)
 
+![MCD - schéma relationnel (rel)](docs/diagrams/MCD.PNG)
+
 ### 6.1 Entités
 
 rel.team(team_id, team_name)
