@@ -304,6 +304,76 @@ Cette partie correspond au **modèle orienté BI** (schéma en étoile) : **dime
 
 ### 9.1 Schéma étoile (aperçu)
 
+
+```mermaid
+erDiagram
+  DIM_DATE {
+    int date_sk PK
+    date full_date
+  }
+
+  DIM_EVENT {
+    int event_id PK
+    text event_name
+  }
+
+  DIM_MAP {
+    int map_id PK
+    text map_name
+  }
+
+  DIM_TEAM {
+    int team_id PK
+    text team_name
+  }
+
+  DIM_PLAYER {
+    int player_id PK
+    text player_name
+    text country
+  }
+
+  FACT_TEAM_MAP_RESULT {
+    int match_id PK
+    int map_id FK
+    int team_id PK
+    int opponent_id FK
+    int event_id FK
+    int date_sk FK
+    int score_for
+    int score_against
+    int round_diff
+    boolean is_winner
+  }
+
+  FACT_PLAYER_MAP_STAR {
+    int match_id PK
+    int map_id FK
+    int player_id PK
+    int team_id FK
+    int event_id FK
+    int date_sk FK
+    int kills
+    int assists
+    int deaths
+    numeric kast
+    numeric adr
+    numeric rating
+  }
+
+  DIM_DATE   ||--o{ FACT_TEAM_MAP_RESULT   : date
+  DIM_EVENT  ||--o{ FACT_TEAM_MAP_RESULT   : event
+  DIM_MAP    ||--o{ FACT_TEAM_MAP_RESULT   : map
+  DIM_TEAM   ||--o{ FACT_TEAM_MAP_RESULT   : team
+  DIM_TEAM   ||--o{ FACT_TEAM_MAP_RESULT   : opponent
+
+  DIM_DATE   ||--o{ FACT_PLAYER_MAP_STAR   : date
+  DIM_EVENT  ||--o{ FACT_PLAYER_MAP_STAR   : event
+  DIM_MAP    ||--o{ FACT_PLAYER_MAP_STAR   : map
+  DIM_TEAM   ||--o{ FACT_PLAYER_MAP_STAR   : team
+  DIM_PLAYER ||--o{ FACT_PLAYER_MAP_STAR   : player
+```
+
 ![Schéma étoile (DWH)](docs/diagrams/STAR_DWH.png)
 
 > 📸 **Capture à ajouter** : une fois le Mermaid rendu sur GitHub, faire une capture et l'enregistrer sous `docs/diagrams/STAR_DWH.png`.
