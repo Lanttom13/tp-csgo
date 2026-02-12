@@ -1,7 +1,6 @@
-# TP – Pipeline Data (CS:GO Pro Matches)  
-**CSV → PostgreSQL (staging) → Modèle relationnel (rel) via Docker Compose**  
-> Bonus : une section **Bêta** présente un modèle **dimensionnel (dwh)** (orienté analyse/BI)
-
+# TP – Pipeline Data (CS:GO Pro Matches)
+**CSV → PostgreSQL (staging) → Modèle relationnel (rel) via Docker Compose**
+> Inclut **l’Atelier 2** : un modèle **dimensionnel (schéma `dwh`)** orienté analyse/BI.
 ---
 
 ## Sommaire
@@ -14,7 +13,7 @@
   - [5.2 Configuration (.env)](#52-configuration-env)
   - [5.3 Démarrage des services](#53-démarrage-des-services)
   - [5.4 Étape 2 – Import CSV vers staging](#54-étape-2--import-csv-vers-staging)
-  - [5.5 Étape 4 – Transformation vers rel](#55-étape-4--transformation-vers-rel)
+  - [5.5 Étape 3 – Transformation vers rel](#55-étape-3--transformation-vers-rel)
 - [6. Modèle relationnel (schéma rel)](#6-modèle-relationnel-schéma-rel)
   - [6.1 Entités](#61-entités)
   - [6.2 Tables d’association](#62-tables-dassociation)
@@ -25,8 +24,8 @@
   - [7.3 Limitation du dataset : economy](#73-limitation-du-dataset--economy)
   - [7.4 Requêtes d’analyse (exemples)](#74-requêtes-danalyse-exemples)
 - [8. Adminer (preuve visuelle)](#8-adminer-preuve-visuelle)
-- [9. Reset / nettoyage](#9-reset--nettoyage)
-- [Bêta – Modèle dimensionnel (schéma dwh)](#bêta--modèle-dimensionnel-schéma-dwh)
+- [9. Atelier 2 — Modèle dimensionnel (schéma dwh)](#9-atelier-2--modèle-dimensionnel-schéma-dwh)
+- [10. Reset / nettoyage](#10-reset--nettoyage)
 
 ---
 
@@ -40,7 +39,7 @@ Mettre en place un pipeline reproductible permettant :
 ---
 
 ## 2. Dataset
-Source : Kaggle — *CS:GO professional matches*  
+Source : Kaggle — *CS:GO professional matches*
 Fichiers utilisés (à placer dans `data/raw/`) :
 - `results.csv` : résultats par map
 - `picks.csv` : veto / picks / decider
@@ -76,14 +75,14 @@ tp-csgo/
 └─ scripts/
 ├─ load_csv_to_postgres.py
 ├─ transform_to_rel.sql
-└─ transform_to_dwh.sql # (Bêta) modèle dimensionnel
+└─ transform_to_dwh.sql # Modèle dimensionnel (dwh)
 ---
 
 ## 5. Mise en place et exécution
 
 ### 5.1 Prérequis
 - Docker Desktop installé
-- (WSL2) Intégration WSL activée dans Docker Desktop :  
+- (WSL2) Intégration WSL activée dans Docker Desktop :
   `Settings → Resources → WSL integration → Ubuntu ON`
 
 ### 5.2 Configuration (.env)
@@ -97,8 +96,10 @@ POSTGRES_PORT=5432
 
 ### 5.3 Démarrage des services
 
+```bash
 docker compose up -d
 docker compose ps
+```
 
 ### 5.4 Étape 2 – Import CSV vers staging
 
@@ -106,7 +107,9 @@ Placer les CSV dans data/raw/
 
 Lancer l’import (ETL Python) :
 
-"docker compose run --rm etl"
+```bash
+docker compose run --rm etl
+```
 
 Résultat : création/remplissage des tables brutes :
 
@@ -118,12 +121,13 @@ staging.economy
 
 staging.players
 
-### 5.5 Étape 4 – Transformation vers rel
+### 5.5 Étape 3 – Transformation vers rel
 
-Script : scripts/transform_to_rel.sql
+Script : `scripts/transform_to_rel.sql`
 
-
+```bash
 docker compose run --rm etl bash -lc "apt-get update >/dev/null 2>&1 && apt-get install -y postgresql-client >/dev/null 2>&1 && PGPASSWORD=\$POSTGRES_PASSWORD psql -h postgres -U \$POSTGRES_USER -d \$POSTGRES_DB -f scripts/transform_to_rel.sql"
+```
 
 Résultat : création/remplissage du schéma rel avec PK/FK et tables d’association.
 
@@ -164,6 +168,7 @@ rel.player_map(match_id, map_id, player_id, team_id, opponent_team_id, kills, as
 
 ### 6.3 ERD (Mermaid)
 
+```mermaid
 erDiagram
   EVENT ||--o{ MATCH : hosts
 
@@ -189,6 +194,7 @@ erDiagram
 
 ### 7.1 Comptage des tables
 
+```bash
 docker compose exec postgres psql -U csgo -d csgo -c "
 SELECT 'team' t, COUNT(*) FROM rel.team
 UNION ALL SELECT 'map', COUNT(*) FROM rel.map
@@ -200,7 +206,7 @@ UNION ALL SELECT 'match_map', COUNT(*) FROM rel.match_map
 UNION ALL SELECT 'veto_action', COUNT(*) FROM rel.veto_action
 UNION ALL SELECT 'economy_round', COUNT(*) FROM rel.economy_round
 UNION ALL SELECT 'player_map', COUNT(*) FROM rel.player_map;"
-
+```
 
 Résultats observés :
 
@@ -226,6 +232,7 @@ player_map = 295023
 
 ### 7.2 Preuve relationnelle : match ↔ team
 
+```bash
 Dans un modèle relationnel, le lien match/équipes est représenté par une table d’association.
 
 
@@ -235,7 +242,7 @@ FROM rel.match_team
 GROUP BY match_id
 ORDER BY nb_teams DESC
 LIMIT 5;"
-
+```
 
 Résultat observé : nb_teams = 2 (conforme).
 
@@ -249,6 +256,7 @@ Le pipeline conserve les matchs, et rel.economy_round est renseignée uniquement
 
 Top 10 maps les plus jouées
 
+```bash
 docker compose exec postgres psql -U csgo -d csgo -c "
 SELECT m.map_name, COUNT(*) AS maps_played
 FROM rel.match_map mm
@@ -256,10 +264,11 @@ JOIN rel.map m ON m.map_id = mm.map_id
 GROUP BY m.map_name
 ORDER BY maps_played DESC
 LIMIT 10;"
-
+```
 
 Top joueurs par rating moyen (min 30 maps)
 
+```bash
 docker compose exec postgres psql -U csgo -d csgo -c "
 SELECT p.player_name, COUNT(*) AS maps_played, ROUND(AVG(pm.rating)::numeric, 3) AS avg_rating
 FROM rel.player_map pm
@@ -269,7 +278,7 @@ GROUP BY p.player_name
 HAVING COUNT(*) >= 30
 ORDER BY avg_rating DESC
 LIMIT 10;"
-
+```
 
 ## 8. Adminer (preuve visuelle)
 
@@ -288,11 +297,110 @@ Mot de passe : valeur de .env
 Base : csgo
 
 
-#### Bêta – Modèle dimensionnel (schéma dwh) ####
+## 9. Atelier 2 — Modèle dimensionnel (schéma `dwh`)
 
-Optionnel : un modèle dimensionnel (facts/dimensions) utile pour l’analyse (BI).
-Le modèle principal attendu pour le TP est le relationnel (rel).
+Cette partie correspond au **modèle orienté BI** (schéma en étoile) : **dimensions** + **faits**, alimentés à partir du modèle relationnel `rel`.
 
-Script : scripts/transform_to_dwh.sql
 
+### 9.1 Schéma étoile (aperçu)
+
+![Schéma étoile (DWH)](docs/diagrams/STAR_DWH.png)
+
+
+### 9.2 Tables DWH (résumé)
+
+**Dimensions**
+- `dwh.dim_date` (1 437 lignes)
+- `dwh.dim_player` (12 295 lignes)
+- `dwh.dim_team` / `dwh.dim_map` / `dwh.dim_event`
+
+**Faits**
+- `dwh.fact_team_map_result` (**60 710** lignes) : grain = 1 ligne par **équipe** et par **map** d’un match.
+- `dwh.fact_player_map_star` (**295 023** lignes) : grain = 1 ligne par **joueur** et par **map** d’un match.
+
+### 9.3 Exécution du script DWH
+
+Script : `scripts/transform_to_dwh.sql`
+
+```bash
 docker compose run --rm etl bash -lc "apt-get update >/dev/null 2>&1 && apt-get install -y postgresql-client >/dev/null 2>&1 && PGPASSWORD=\$POSTGRES_PASSWORD psql -h postgres -U \$POSTGRES_USER -d \$POSTGRES_DB -f scripts/transform_to_dwh.sql"
+```
+
+### 9.4 Requêtes BI
+
+Les requêtes BI complètes sont disponibles dans : `docs/sql/bi_queries.sql`.
+Les captures des résultats de requètes sont dans `docs/diagrams/` (ex : `BI_Q1.png`).
+
+
+**Q1 — Requête BI**
+
+```sql
+-- Q1 — Top 20 équipes (winrate global, min 50 maps jouées)
+
+SELECT
+  t.team_name,
+  ROUND(AVG(CASE WHEN f.is_winner THEN 1 ELSE 0 END)::numeric, 3) AS win_rate,
+  COUNT(*) AS games
+FROM dwh.fact_team_map_result f
+JOIN dwh.dim_team t ON t.team_id = f.team_id
+GROUP BY t.team_name
+HAVING COUNT(*) >= 50
+ORDER BY win_rate DESC
+LIMIT 20;
+```
+
+**Résultat** : `docs/diagrams/BI_Q1.png`
+
+![Résultat Q1](docs/diagrams/BI_Q1.png)
+
+**Q2 — Requête BI**
+
+```sql
+
+-- Q2 — Top joueurs (rating moyen) avec volume minimum
+
+SELECT
+  p.player_name,
+  ROUND(AVG(f.rating)::numeric, 3) AS avg_rating,
+  COUNT(*) AS maps_played
+FROM dwh.fact_player_map_star f
+JOIN dwh.dim_player p ON p.player_id = f.player_id
+WHERE f.rating IS NOT NULL
+GROUP BY p.player_name
+HAVING COUNT(*) >= 30
+ORDER BY avg_rating DESC
+LIMIT 20;
+```
+
+**Résultat (capture à ajouter)** : `docs/diagrams/BI_Q2.png`
+
+![Résultat Q2](docs/diagrams/BI_Q2.png)
+
+**Q3 — Requête BI**
+
+```sql
+
+-- Q3 — “Week-end vs semaine” : winrate par map le week-end
+
+SELECT
+  mp.map_name,
+  ROUND(AVG(CASE WHEN f.is_winner THEN 1 ELSE 0 END)::numeric, 3) AS win_rate_weekend,
+  COUNT(*) AS games_weekend
+FROM dwh.fact_team_map_result f
+JOIN dwh.dim_date d ON d.date_sk = f.date_sk
+JOIN dwh.dim_map mp ON mp.map_id = f.map_id
+WHERE d.is_weekend = TRUE
+GROUP BY mp.map_name
+HAVING COUNT(*) >= 50
+ORDER BY win_rate_weekend DESC;
+```
+
+**Résultat (capture à ajouter)** : `docs/diagrams/BI_Q3.png`
+
+![Résultat Q3](docs/diagrams/BI_Q3.png)
+
+## 10. Reset / nettoyage
+
+```bash
+docker compose down -v
+```
