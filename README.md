@@ -26,7 +26,6 @@
 - [8. Adminer (preuve visuelle)](#8-adminer-preuve-visuelle)
 - [9. Atelier 2 — Modèle dimensionnel (schéma dwh)](#9-atelier-2--modèle-dimensionnel-schéma-dwh)
 - [10. Reset / nettoyage](#10-reset--nettoyage)
-
 ---
 
 ## 1. Objectif
@@ -190,6 +189,7 @@ erDiagram
   TEAM   ||--o{ PLAYER_MAP : for
 
 
+```
 ## 7. Validations et preuves
 
 ### 7.1 Comptage des tables
@@ -305,6 +305,8 @@ Cette partie correspond au **modèle orienté BI** (schéma en étoile) : **dime
 ### 9.1 Schéma étoile (aperçu)
 
 ![Schéma étoile (DWH)](docs/diagrams/STAR_DWH.png)
+
+> 📸 **Capture à ajouter** : une fois le Mermaid rendu sur GitHub, faire une capture et l'enregistrer sous `docs/diagrams/STAR_DWH.png`.
 
 
 ### 9.2 Tables DWH (résumé)
