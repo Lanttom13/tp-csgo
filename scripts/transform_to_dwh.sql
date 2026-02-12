@@ -451,4 +451,188 @@ JOIN dwh.dim_map m ON m.map_name = p.map_name
 JOIN dwh.dim_team t ON t.team_name = p.team_name
 WHERE p.match_id IS NOT NULL AND p.player_id IS NOT NULL;
 
+-- ==========================================================
+-- ATELIER 2 — SCHÉMA ÉTOILE (STAR) à partir du DWH intermédiaire
+-- ==========================================================
+
+-- 1) DIMENSIONS manquantes : dim_date + dim_player
+DROP TABLE IF EXISTS dwh.dim_date CASCADE;
+CREATE TABLE dwh.dim_date (
+  date_sk    INT PRIMARY KEY,           
+  full_date  DATE NOT NULL UNIQUE,
+  day        SMALLINT NOT NULL,
+  month      SMALLINT NOT NULL,
+  year       SMALLINT NOT NULL,
+  iso_dow    SMALLINT NOT NULL,         
+  iso_week   SMALLINT NOT NULL,
+  is_weekend BOOLEAN NOT NULL
+);
+
+WITH bounds AS (
+  SELECT MIN(match_date::date) AS min_d, MAX(match_date::date) AS max_d
+  FROM dwh.fact_match
+),
+days AS (
+  SELECT generate_series((SELECT min_d FROM bounds),
+                         (SELECT max_d FROM bounds),
+                         interval '1 day')::date AS d
+)
+INSERT INTO dwh.dim_date(date_sk, full_date, day, month, year, iso_dow, iso_week, is_weekend)
+SELECT
+  to_char(d, 'YYYYMMDD')::int,
+  d,
+  EXTRACT(DAY FROM d)::smallint,
+  EXTRACT(MONTH FROM d)::smallint,
+  EXTRACT(YEAR FROM d)::smallint,
+  EXTRACT(ISODOW FROM d)::smallint,
+  EXTRACT(WEEK FROM d)::smallint,
+  (EXTRACT(ISODOW FROM d) IN (6,7))::boolean
+FROM days;
+
+
+DROP TABLE IF EXISTS dwh.dim_player CASCADE;
+CREATE TABLE dwh.dim_player (
+  player_id   INT PRIMARY KEY,
+  player_name TEXT NOT NULL,
+  country     TEXT
+);
+
+INSERT INTO dwh.dim_player(player_id, player_name, country)
+SELECT DISTINCT
+  player_id,
+  COALESCE(NULLIF(TRIM(player_name), ''), 'Unknown') AS player_name,
+  country
+FROM dwh.fact_player_map
+WHERE player_id IS NOT NULL;
+
+
+-- 2) FAIT STAR : résultat équipe / match / map (2 lignes par match_map)
+DROP TABLE IF EXISTS dwh.fact_team_map_result CASCADE;
+CREATE TABLE dwh.fact_team_map_result (
+  match_id      INT NOT NULL,
+  map_id        INT NOT NULL,
+  event_id      INT NOT NULL,
+  date_sk       INT NOT NULL,
+
+  team_id       INT NOT NULL,
+  opponent_id   INT NOT NULL,
+  team_slot     SMALLINT NOT NULL CHECK (team_slot IN (1,2)),
+
+  score_for     SMALLINT NOT NULL,
+  score_against SMALLINT NOT NULL,
+  round_diff    SMALLINT NOT NULL,
+  is_winner     BOOLEAN  NOT NULL,
+
+  PRIMARY KEY (match_id, map_id, team_id),
+
+  FOREIGN KEY (date_sk)     REFERENCES dwh.dim_date(date_sk),
+  FOREIGN KEY (event_id)    REFERENCES dwh.dim_event(event_id),
+  FOREIGN KEY (map_id)      REFERENCES dwh.dim_map(map_id),
+  FOREIGN KEY (team_id)     REFERENCES dwh.dim_team(team_id),
+  FOREIGN KEY (opponent_id) REFERENCES dwh.dim_team(team_id)
+);
+
+WITH base AS (
+  SELECT
+    fm.match_id,
+    fmm.map_id,
+    fm.event_id,
+    fm.match_date::date AS match_date,
+    fm.team1_id,
+    fm.team2_id,
+    fmm.result_1 AS s1,
+    fmm.result_2 AS s2
+  FROM dwh.fact_match fm
+  JOIN dwh.fact_match_map fmm ON fmm.match_id = fm.match_id
+)
+INSERT INTO dwh.fact_team_map_result(
+  match_id, map_id, event_id, date_sk,
+  team_id, opponent_id, team_slot,
+  score_for, score_against, round_diff, is_winner
+)
+-- équipe 1
+SELECT
+  b.match_id, b.map_id, b.event_id, dd.date_sk,
+  b.team1_id, b.team2_id, 1,
+  COALESCE(b.s1,0)::smallint,
+  COALESCE(b.s2,0)::smallint,
+  (COALESCE(b.s1,0) - COALESCE(b.s2,0))::smallint,
+  CASE
+    WHEN mm.team1_score IS NOT NULL AND mm.team2_score IS NOT NULL THEN (mm.team1_score > mm.team2_score)
+    ELSE FALSE
+  END
+FROM base b
+JOIN dwh.dim_date dd ON dd.full_date = b.match_date
+
+UNION ALL
+
+-- équipe 2
+SELECT
+  b.match_id, b.map_id, b.event_id, dd.date_sk,
+  b.team2_id, b.team1_id, 2,
+  COALESCE(b.s2,0)::smallint,
+  COALESCE(b.s1,0)::smallint,
+  (COALESCE(b.s2,0) - COALESCE(b.s1,0))::smallint,
+  CASE
+    WHEN mm.team1_score IS NOT NULL AND mm.team2_score IS NOT NULL THEN (mm.team2_score > mm.team1_score)
+    ELSE FALSE
+  END
+FROM base b
+JOIN dwh.dim_date dd ON dd.full_date = b.match_date;
+
+
+-- 3) FAIT STAR : perf joueur / match / map (sans textes “degenerate”)
+DROP TABLE IF EXISTS dwh.fact_player_map_star CASCADE;
+CREATE TABLE dwh.fact_player_map_star (
+  match_id   INT NOT NULL,
+  map_id     INT NOT NULL,
+  event_id   INT NOT NULL,
+  date_sk    INT NOT NULL,
+
+  player_id  INT NOT NULL,
+  team_id    INT NOT NULL,
+
+  kills      INT,
+  assists    INT,
+  deaths     INT,
+  kast       NUMERIC,
+  adr        NUMERIC,
+  rating     NUMERIC,
+
+  kdiff      INT,
+  kd_ratio   NUMERIC,
+
+  PRIMARY KEY (match_id, map_id, player_id),
+
+  FOREIGN KEY (date_sk)   REFERENCES dwh.dim_date(date_sk),
+  FOREIGN KEY (event_id)  REFERENCES dwh.dim_event(event_id),
+  FOREIGN KEY (map_id)    REFERENCES dwh.dim_map(map_id),
+  FOREIGN KEY (player_id) REFERENCES dwh.dim_player(player_id),
+  FOREIGN KEY (team_id)   REFERENCES dwh.dim_team(team_id)
+);
+
+INSERT INTO dwh.fact_player_map_star(
+  match_id, map_id, event_id, date_sk,
+  player_id, team_id,
+  kills, assists, deaths, kast, adr, rating,
+  kdiff, kd_ratio
+)
+SELECT
+  fpm.match_id,
+  fpm.map_id,
+  fm.event_id,
+  dd.date_sk,
+  fpm.player_id,
+  fpm.team_id,
+  fpm.kills, fpm.assists, fpm.deaths, fpm.kast, fpm.adr, fpm.rating,
+  (fpm.kills - fpm.deaths) AS kdiff,
+  CASE
+    WHEN fpm.deaths IS NULL OR fpm.deaths = 0 THEN NULL
+    ELSE (fpm.kills::numeric / fpm.deaths::numeric)
+  END AS kd_ratio
+FROM dwh.fact_player_map fpm
+JOIN dwh.fact_match fm ON fm.match_id = fpm.match_id
+JOIN dwh.dim_date dd   ON dd.full_date = fm.match_date::date;
+
+
 COMMIT;
