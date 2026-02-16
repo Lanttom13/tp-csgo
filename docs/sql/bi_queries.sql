@@ -29,18 +29,46 @@ LIMIT 20;
 
 
 
--- Q3 “winrate par map le week-end”
+-- Q3 Top maps les plus jouées
 
 SELECT
-  mp.map_name,
-  ROUND(AVG(ABS(f.round_diff))::numeric, 2) AS avg_round_gap_weekend,
-  COUNT(*) AS team_rows_weekend
+  m.map_name,
+  COUNT(*) AS maps_played
+FROM dwh.fact_match_map fmm
+JOIN dwh.dim_map m ON m.map_id = fmm.map_id
+GROUP BY m.map_name
+ORDER BY maps_played DESC
+LIMIT 15;
+
+-- Q4 Évolution mensuelle du winrate (team x temps)
+
+SELECT
+  (d.year::text || '-' || LPAD(d.month::text, 2, '0')) AS year_month,
+  t.team_name,
+  ROUND(AVG(f.is_winner::int)::numeric, 3) AS win_rate,
+  COUNT(*) AS games
 FROM dwh.fact_team_map_result f
 JOIN dwh.dim_date d ON d.date_sk = f.date_sk
-JOIN dwh.dim_map mp ON mp.map_id = f.map_id
-WHERE d.is_weekend = TRUE
-GROUP BY mp.map_name
-HAVING COUNT(*) >= 100
-ORDER BY avg_round_gap_weekend DESC;
+JOIN dwh.dim_team t ON t.team_id = f.team_id
+GROUP BY year_month, t.team_name
+HAVING COUNT(*) >= 20
+ORDER BY year_month ASC, t.team_name;
+
+
+
+-- Q5 Heatmap winrate (team x map)
+
+SELECT
+  t.team_name,
+  m.map_name,
+  ROUND(AVG(f.is_winner::int)::numeric, 3) AS win_rate,
+  COUNT(*) AS games
+FROM dwh.fact_team_map_result f
+JOIN dwh.dim_team t ON t.team_id = f.team_id
+JOIN dwh.dim_map m ON m.map_id = f.map_id
+GROUP BY t.team_name, m.map_name
+HAVING COUNT(*) >= 20
+ORDER BY t.team_name, m.map_name;
+
 
 

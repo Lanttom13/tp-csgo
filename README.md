@@ -1,80 +1,88 @@
-# TP – Pipeline Data (CS:GO Pro Matches)
-**CSV → PostgreSQL (staging) → Modèle relationnel (rel) via Docker Compose**
-> Inclut **l’Atelier 2** : un modèle **dimensionnel (schéma `dwh`)** orienté analyse/BI.
+# TP-CSGO — Data Mark (ETL → REL → DWH → BI)
+
+Ce dépôt met en place une chaîne complète de traitement de données CSGO :
+- **Staging** : chargement des CSV bruts
+- **Modèle relationnel (REL)** : normalisation des données
+- **Data Warehouse (DWH)** : modèle dimensionnel (schéma étoile)
+- **BI** : KPI & dashboard sous **Metabase**
+- **Observabilité** : centralisation et lecture des logs via **Dozzle**
+
+> Ateliers couverts : **Atelier 1 / 2 / 3**  
+> Atelier 2 = DWH (étoile) + requêtes BI  
+> Atelier 3 = **Metabase (KPI + Dashboard)** + **Dozzle (preuve d’erreur DB)**
+
 ---
 
 ## Sommaire
-- [1. Objectif](#1-objectif)
-- [2. Dataset](#2-dataset)
-- [3. Architecture Docker](#3-architecture-docker)
-- [4. Structure du projet](#4-structure-du-projet)
-- [5. Mise en place et exécution](#5-mise-en-place-et-exécution)
-  - [5.1 Prérequis](#51-prérequis)
-  - [5.2 Configuration (.env)](#52-configuration-env)
-  - [5.3 Démarrage des services](#53-démarrage-des-services)
-  - [5.4 Étape 2 – Import CSV vers staging](#54-étape-2--import-csv-vers-staging)
-  - [5.5 Étape 3 – Transformation vers rel](#55-étape-3--transformation-vers-rel)
-- [6. Modèle relationnel (schéma rel)](#6-modèle-relationnel-schéma-rel)
-  - [6.1 Entités](#61-entités)
-  - [6.2 Tables d’association](#62-tables-dassociation)
-  - [6.3 ERD (Mermaid)](#63-erd-mermaid)
-- [7. Validations et preuves](#7-validations-et-preuves)
-  - [7.1 Comptage des tables](#71-comptage-des-tables)
-  - [7.2 Preuve relationnelle : match ↔ team](#72-preuve-relationnelle--match--team)
-  - [7.3 Limitation du dataset : economy](#73-limitation-du-dataset--economy)
-  - [7.4 Requêtes d’analyse (exemples)](#74-requêtes-danalyse-exemples)
-- [8. Adminer (preuve visuelle)](#8-adminer-preuve-visuelle)
-- [9. Atelier 2 — Modèle dimensionnel (schéma dwh)](#9-atelier-2--modèle-dimensionnel-schéma-dwh)
-- [10. Reset / nettoyage](#10-reset--nettoyage)
----
 
-## 1. Objectif
-Mettre en place un pipeline reproductible permettant :
-1. de récupérer un dataset CSV,
-2. d’importer les données dans PostgreSQL sous forme brute (**schéma `staging`**),
-3. de transformer ces données en **modèle relationnel** (**schéma `rel`**) avec clés primaires/étrangères et tables d’association,
-4. de valider la cohérence via requêtes SQL et preuves (Adminer + outputs terminal).
+1. [Objectifs](#1-objectifs)  
+2. [Prérequis](#2-prérequis)  
+3. [Architecture Docker](#3-architecture-docker)  
+4. [Structure du projet](#4-structure-du-projet)  
+5. [Mise en place (pas à pas)](#5-mise-en-place-pas-à-pas)  
+6. [ETL — Chargement CSV → Staging](#6-etl--chargement-csv--staging)  
+7. [Transformation — Staging → REL](#7-transformation--staging--rel)  
+8. [Transformation — REL → DWH (schéma étoile)](#8-transformation--rel--dwh-schéma-étoile)  
+9. [Atelier 2 — Modèle étoile & cohérence des faits](#9-atelier-2--modèle-étoile--cohérence-des-faits)  
+10. [Atelier 3 — BI (Metabase) & Logs (Dozzle)](#10-atelier-3--bi-metabase--logs-dozzle)  
+11. [Livrables attendus (captures / SQL)](#11-livrables-attendus-captures--sql)  
+12. [Reset / Nettoyage](#12-reset--nettoyage)
 
 ---
 
-## 2. Dataset
-Source : Kaggle — *CS:GO professional matches*
-Fichiers utilisés (à placer dans `data/raw/`) :
-- `results.csv` : résultats par map
-- `picks.csv` : veto / picks / decider
-- `economy.csv` : économie par round (1..30)
-- `players.csv` : statistiques joueurs + stats par map (m1/m2/m3)
+## 1. Objectifs
 
-**Important (GitHub)** : les CSV ne sont pas versionnés :
-- volumineux
-- licence Kaggle
-- reproductibilité assurée par la documentation du pipeline
+- Charger des données CSGO (CSV) dans Postgres
+- Construire un **modèle relationnel** exploitable (schéma `rel`)
+- Construire un **DWH en schéma étoile** (schéma `dwh`)
+- Exposer des **KPI BI** via Metabase (Atelier 3)
+- Fournir une **preuve log** via Dozzle (Atelier 3)
+
+---
+
+## 2. Prérequis
+
+- Docker + Docker Compose
+- (Optionnel) WSL2 sous Windows
+- Un navigateur web (Metabase / Adminer / Dozzle)
 
 ---
 
 ## 3. Architecture Docker
-Le projet tourne via `docker-compose.yml` :
 
-- `postgres` : PostgreSQL 16
-- `adminer` : interface web (http://localhost:8080)
-- `etl` : conteneur Python pour exécuter l’import staging et lancer les scripts SQL
+Services :
+
+- **postgres** : base de données (port `5432`)
+- **adminer** : client SQL web (port `8080`)
+- **metabase** : BI / dashboards (port `3000`)
+- **dozzle** : viewer de logs Docker (port `9999`)
+- **etl** : conteneur Python (chargement staging)
+
+Accès (depuis la machine hôte) :
+
+- Adminer : `http://localhost:8080`
+- Metabase : `http://localhost:3000`
+- Dozzle : `http://localhost:9999`
 
 ---
 
 ## 4. Structure du projet
 
 
-tp-csgo/
-├─ docker-compose.yml
-├─ requirements.txt
-├─ .env.example
-├─ .gitignore
+TP-CSGO/
 ├─ data/
-│ └─ raw/ # NON versionné (CSV Kaggle)
-└─ scripts/
-├─ load_csv_to_postgres.py
-├─ transform_to_rel.sql
-└─ transform_to_dwh.sql # Modèle dimensionnel (dwh)
+│ └─ raw/ # CSV bruts (results/picks/economy/players)
+├─ docs/
+│ ├─ diagrams/ # captures & schémas (preuves)
+│ └─ sql/ # requêtes BI (Q1→Q5)
+├─ scripts/
+│ ├─ load_csv_to_postgres.py # CSV → staging.*
+│ ├─ transform_to_rel.sql # staging → rel
+│ └─ transform_to_dwh.sql # rel → dwh (étoile + tables de faits)
+├─ docker-compose.yml
+├─ .env.example
+├─ README.md
+└─ requirements.txt
 ---
 
 ## 5. Mise en place et exécution
@@ -376,7 +384,6 @@ erDiagram
 
 ![Schéma étoile (DWH)](docs/diagrams/STAR_DWH.png)
 
-> 📸 **Capture à ajouter** : une fois le Mermaid rendu sur GitHub, faire une capture et l'enregistrer sous `docs/diagrams/STAR_DWH.png`.
 
 
 ### 9.2 Tables DWH (résumé)
@@ -472,6 +479,99 @@ ORDER BY win_rate_weekend DESC;
 ![Résultat Q3](docs/diagrams/BI_Q3.png)
 
 ## 10. Reset / nettoyage
+
+```bash
+docker compose down -v
+```
+## Atelier 3 — BI (Metabase) & Logs (Dozzle)
+
+### 1) Metabase — connexion à Postgres
+
+Metabase : `http://localhost:3000`
+
+Ajouter une base de données (**PostgreSQL**) avec :
+
+- Host : `postgres`
+- Port : `5432`
+- Database : `csgo`
+- Username : `csgo`
+- Password : valeur de `.env`
+
+### 2) KPI (Q1 → Q5)
+
+Créer 5 « questions » Metabase (requêtes SQL natives) à partir du schéma `dwh`.
+
+Les requêtes sont dans :
+
+- `docs/sql/bi_queries.sql`
+
+Captures attendues (Metabase) :
+
+- `docs/diagrams/A3_METABASE_KPI1.png`
+- `docs/diagrams/A3_METABASE_KPI2.png`
+- `docs/diagrams/A3_METABASE_KPI3.png`
+- `docs/diagrams/A3_METABASE_KPI4.png`
+- `docs/diagrams/A3_METABASE_KPI5.png`
+
+### 3) Dashboard (preuve BI)
+
+Créer un dashboard :
+
+- **+ Nouveau** → **Dashboard**
+- Nom : **A3 - Dashboard CSGO**
+- Ajouter les 5 KPI et organiser les tuiles
+
+📸 Capture : `docs/diagrams/A3_METABASE_DASHBOARD.png`
+
+### 4) Dozzle — preuve d’erreur DB (logs)
+
+Dozzle : `http://localhost:9999`
+
+Objectif : montrer qu’une panne DB est visible en temps réel dans les logs Metabase.
+
+1) Stop Postgres :
+
+```bash
+docker compose stop postgres
+```
+
+2) Recharger le dashboard / relancer un KPI (les requêtes échouent)
+
+3) Dans Dozzle, ouvrir les logs du conteneur **metabase** et capturer une erreur de connexion, par ex. :
+
+- `ERROR ... The connection attempt failed`
+- `org.postgresql.util.PSQLException`
+
+📸 Capture : `docs/diagrams/A3_DOZZLE_DB_ERROR.png`
+
+4) Redémarrer Postgres :
+
+```bash
+docker compose start postgres
+```
+
+---
+
+## Livrables attendus
+
+### SQL
+
+- `docs/sql/bi_queries.sql` : requêtes KPI Metabase (Q1 → Q5)
+
+### Captures / schémas
+
+- `docs/diagrams/MCD.PNG`
+- `docs/diagrams/ERD_REL.png`
+- `docs/diagrams/STAR_DWH.png`
+- `docs/diagrams/BI_Q1.png`
+- `docs/diagrams/BI_Q2.png`
+- `docs/diagrams/BI_Q3.png`
+- `docs/diagrams/A3_METABASE_DASHBOARD.png`
+- `docs/diagrams/A3_DOZZLE_DB_ERROR.png`
+
+---
+
+## Reset / Nettoyage
 
 ```bash
 docker compose down -v
